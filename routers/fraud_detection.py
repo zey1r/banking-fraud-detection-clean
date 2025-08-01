@@ -16,15 +16,24 @@ router = APIRouter()
 
 # Load ML model
 model = None
+scaler = None
 try:
     if os.path.exists(settings.MODEL_PATH):
-        model = joblib.load(settings.MODEL_PATH)
-        print(f"✅ ML Model loaded from {settings.MODEL_PATH}")
+        model_data = joblib.load(settings.MODEL_PATH)
+        if isinstance(model_data, dict):
+            model = model_data.get('model')
+            scaler = model_data.get('scaler')
+            accuracy = model_data.get('accuracy', 'unknown')
+            print(f"✅ ML Model loaded from {settings.MODEL_PATH} (accuracy: {accuracy:.3f})")
+        else:
+            model = model_data  # Backward compatibility
+            print(f"✅ ML Model loaded from {settings.MODEL_PATH} (legacy format)")
     else:
         print(f"⚠️ Model file not found: {settings.MODEL_PATH}, using mock predictions")
 except Exception as e:
     print(f"⚠️ Failed to load model: {e}, using mock predictions")
     model = None
+    scaler = None
 
 
 @router.post("/predict", response_model=FraudResponse)
@@ -40,6 +49,10 @@ async def predict_fraud(request: FraudRequest):
                 float(request.is_weekend),
                 float(request.is_night_time)
             ]])
+            
+            # Apply scaling if scaler is available
+            if scaler is not None:
+                features = scaler.transform(features)
             
             fraud_probability = model.predict_proba(features)[0][1]
             fraud_score = float(fraud_probability)
